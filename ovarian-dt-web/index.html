@@ -1,287 +1,360 @@
-<!doctype html>
-<html lang="zh">
+<!DOCTYPE html>
+<html lang="zh-CN">
 <head>
-  <meta charset="utf-8" />
-  <title>Ovarian DT — vtk.js Timeline Viewer</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- 推荐使用本地 vtk.min.js（若无网络，更稳） -->
-  <script src="assets/vtk.min.js"></script>
-  <!-- 如需临时用 CDN，请改为：<script src="https://unpkg.com/vtk.js"></script> -->
-  <style>
-    :root { --bar-h: 48px; }
-    html, body { height:100%; }
-    body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system; color:#f6f4f4; }
-    #toolbar {
-      position:fixed; top:0; left:0; right:0; height:var(--bar-h);
-      background:#111; display:flex; align-items:center; gap:16px;
-      padding:6px 12px; z-index:10;
-    }
-    #app { position:absolute; top:var(--bar-h); left:0; right:0; bottom:0; }
-    label { font-size:14px; white-space:nowrap; }
-    select, input[type=range], input[type=checkbox] { vertical-align:middle; }
-    .spacer { flex:1; }
-    .muted { opacity:0.75; }
-    .hide { display:none; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>卵巢癌数字孪生 - Ovarian Digital Twin</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f0f2f5;
+            color: #333;
+        }
+
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+
+        .controls {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+
+        .controls h2 {
+            margin-bottom: 1rem;
+            color: #667eea;
+        }
+
+        .control-group {
+            margin-bottom: 1rem;
+        }
+
+        .control-group label {
+            display: inline-block;
+            width: 150px;
+            font-weight: 600;
+        }
+
+        .control-group select, .control-group button {
+            padding: 0.5rem 1rem;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 1rem;
+        }
+
+        .control-group button {
+            background: #667eea;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .control-group button:hover {
+            background: #5568d3;
+        }
+
+        .viewer {
+            background: white;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            min-height: 600px;
+        }
+
+        .viewer h2 {
+            margin-bottom: 1rem;
+            color: #667eea;
+        }
+
+        #canvas-container {
+            width: 100%;
+            height: 500px;
+            background: #1a1a2e;
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+
+        .info-panel {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-top: 2rem;
+        }
+
+        .info-panel h3 {
+            margin-bottom: 1rem;
+            color: #667eea;
+        }
+
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .metric-card {
+            background: #f8f9fa;
+            padding: 1rem;
+            border-radius: 5px;
+            border-left: 4px solid #667eea;
+        }
+
+        .metric-card h4 {
+            font-size: 0.9rem;
+            color: #666;
+            margin-bottom: 0.5rem;
+        }
+
+        .metric-card p {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .timeline {
+            margin-top: 1.5rem;
+        }
+
+        .timeline-item {
+            padding: 0.75rem;
+            background: #f8f9fa;
+            border-radius: 5px;
+            margin-bottom: 0.5rem;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .timeline-item:hover {
+            background: #e9ecef;
+        }
+
+        .timeline-item.active {
+            background: #667eea;
+            color: white;
+        }
+
+        footer {
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+            margin-top: 3rem;
+        }
+    </style>
 </head>
 <body>
-  <div id="toolbar">
-    <label>Patient:
-      <select id="patientSelect"></select>
-    </label>
+    <header>
+        <h1>卵巢癌数字孪生系统</h1>
+        <p>Ovarian Cancer Digital Twin - 可视化与预测分析平台</p>
+    </header>
 
-    <label>Timepoint:
-      <input id="visitSlider" type="range" min="0" max="0" value="0" step="1" />
-      <span id="visitLabel">0</span>
-    </label>
+    <div class="container">
+        <div class="controls">
+            <h2>控制面板</h2>
+            <div class="control-group">
+                <label for="patient-select">选择患者:</label>
+                <select id="patient-select">
+                    <option value="">-- 请选择患者 --</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label for="visit-select">选择就诊:</label>
+                <select id="visit-select">
+                    <option value="">-- 请先选择患者 --</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <button id="load-btn">加载 3D 模型</button>
+                <button id="reset-btn">重置视图</button>
+            </div>
+        </div>
 
-    <label>Rendering:
-      <select id="modeSelect">
-        <option value="points">Points</option>
-        <option value="spheres">Spheres</option>
-        <option value="surface">Surface</option>
-      </select>
-    </label>
+        <div class="viewer">
+            <h2>3D 可视化</h2>
+            <div id="canvas-container">
+                <p>请选择患者和就诊记录以加载 3D 模型</p>
+            </div>
+        </div>
 
-    <label id="ptSizeWrap">Point size:
-      <input id="ptSize" type="range" min="1" max="12" value="5" />
-      <span id="ptSizeLabel">5</span>
-    </label>
+        <div class="info-panel">
+            <h3>度量信息</h3>
+            <div class="metrics" id="metrics-container">
+                <div class="metric-card">
+                    <h4>体积</h4>
+                    <p id="metric-volume">-- cm³</p>
+                </div>
+                <div class="metric-card">
+                    <h4>表面积</h4>
+                    <p id="metric-surface">-- cm²</p>
+                </div>
+                <div class="metric-card">
+                    <h4>点数</h4>
+                    <p id="metric-points">--</p>
+                </div>
+                <div class="metric-card">
+                    <h4>就诊日期</h4>
+                    <p id="metric-date">--</p>
+                </div>
+            </div>
 
-    <label id="sphereRWrap" class="hide">Sphere radius:
-      <input id="sphereR" type="range" min="0.1" max="10" step="0.1" value="1.0" />
-      <span id="sphereRLabel">1.0</span>
-    </label>
+            <div class="timeline" id="timeline-container">
+                <h3>时间轴</h3>
+                <div id="timeline-items">
+                    <p>暂无就诊记录</p>
+                </div>
+            </div>
+        </div>
+    </div>
 
-    <label class="muted">Lighting
-      <input id="lighting" type="checkbox" checked />
-    </label>
+    <footer>
+        <p>© 2024 Ovarian Digital Twin Project | 卵巢癌数字孪生项目</p>
+    </footer>
 
-    <div class="spacer"></div>
-    <span id="meta" class="muted"></span>
-  </div>
+    <script>
+        // 全局变量
+        let timelineData = [];
+        let currentPatient = null;
+        let currentVisit = null;
 
-  <div id="app"></div>
+        // 加载 timeline.json
+        async function loadTimeline() {
+            try {
+                const response = await fetch('data/timeline.json');
+                if (!response.ok) {
+                    throw new Error('timeline.json 未找到');
+                }
+                timelineData = await response.json();
+                populatePatientSelect();
+            } catch (error) {
+                console.error('加载 timeline 失败:', error);
+                alert('无法加载数据，请确保已生成 timeline.json');
+            }
+        }
 
-  <script>
-    // ---------------- 基本渲染管线 ----------------
-    const fsrw = vtk.Rendering.Misc.vtkFullScreenRenderWindow.newInstance({
-      rootContainer: document.body,
-      containerStyle: { height: '100%', width: '100%', position: 'absolute' },
-      background: [0.98, 0.98, 0.98],
-    });
-    const renderer = fsrw.getRenderer();
-    const renderWindow = fsrw.getRenderWindow();
-    const interactor = renderWindow.getInteractor();
+        // 填充患者选择器
+        function populatePatientSelect() {
+            const select = document.getElementById('patient-select');
+            select.innerHTML = '<option value="">-- 请选择患者 --</option>';
 
-    // 坐标轴
-    const axes = vtk.Rendering.Core.vtkAxesActor.newInstance();
-    renderer.addActor(axes);
+            timelineData.forEach(patient => {
+                const option = document.createElement('option');
+                option.value = patient.patient_id;
+                option.textContent = `患者 ${patient.patient_id} (${patient.visits.length} 次就诊)`;
+                select.appendChild(option);
+            });
+        }
 
-    // 单一 actor，mapper 可按模式更换
-    const actor  = vtk.Rendering.Core.vtkActor.newInstance();
-    renderer.addActor(actor);
+        // 填充就诊选择器
+        function populateVisitSelect(patientId) {
+            const patient = timelineData.find(p => p.patient_id === patientId);
+            const select = document.getElementById('visit-select');
 
-    // ---------------- UI 句柄 ----------------
-    const patientSelect = document.getElementById('patientSelect');
-    const visitSlider   = document.getElementById('visitSlider');
-    const visitLabel    = document.getElementById('visitLabel');
-    const modeSelect    = document.getElementById('modeSelect');
-    const ptSizeInput   = document.getElementById('ptSize');
-    const ptSizeLabel   = document.getElementById('ptSizeLabel');
-    const sphereRInput  = document.getElementById('sphereR');
-    const sphereRLabel  = document.getElementById('sphereRLabel');
-    const ptSizeWrap    = document.getElementById('ptSizeWrap');
-    const sphereRWrap   = document.getElementById('sphereRWrap');
-    const lightingChk   = document.getElementById('lighting');
-    const metaSpan      = document.getElementById('meta');
+            if (!patient) {
+                select.innerHTML = '<option value="">-- 患者无数据 --</option>';
+                return;
+            }
 
-    // ---------------- 数据加载 ----------------
-    function loadPolyData(url) {
-      const ext = url.split('.').pop().toLowerCase();
-      if (ext === 'ply') {
-        const r = vtk.IO.Geometry.vtkPLYReader.newInstance();
-        return r.setUrl(url).then(() => r.getOutputData());
-      } else if (ext === 'vtp') {
-        const r = vtk.IO.XML.vtkXMLPolyDataReader.newInstance();
-        return r.setUrl(url).then(() => r.getOutputData());
-      } else if (ext === 'stl') {
-        const r = vtk.IO.Geometry.vtkSTLReader.newInstance();
-        return r.setUrl(url).then(() => r.getOutputData());
-      } else if (ext === 'obj') {
-        const r = vtk.IO.Geometry.vtkOBJReader.newInstance();
-        return r.setUrl(url).then(() => r.getOutputData());
-      }
-      return Promise.reject(new Error('Unsupported format: ' + ext));
-    }
+            select.innerHTML = '<option value="">-- 请选择就诊 --</option>';
 
-    // ---------------- Mapper 工厂 ----------------
-    function createPointsMapper(polyData, pointSize=5) {
-      const mapper = vtk.Rendering.Core.vtkMapper.newInstance({ scalarVisibility: false });
-      mapper.setInputData(polyData);
-      actor.setMapper(mapper);
-      actor.getProperty().setRepresentationToPoints();
-      actor.getProperty().setPointSize(pointSize);
-      return mapper;
-    }
+            patient.visits.forEach(visit => {
+                const option = document.createElement('option');
+                option.value = visit.visit;
+                option.textContent = `就诊 ${visit.visit} - ${visit.date} (${visit.vol_cc} cm³)`;
+                select.appendChild(option);
+            });
+        }
 
-    function createGlyphMapper(polyData, radius=1.0) {
-      // 有些打包方式需要启用 Glyph profile；全量 UMD 通常已包含
-      try { vtk.Rendering.Profile.Glyph; } catch (_) {}
-      const sphere = vtk.Filters.Sources.vtkSphereSource.newInstance({
-        radius, phiResolution: 10, thetaResolution: 10,
-      });
-      const glyphMapper = vtk.Rendering.Core.vtkGlyph3DMapper.newInstance();
-      glyphMapper.setInputData(polyData);                 // 输入点
-      glyphMapper.setGlyphSource(sphere.getOutputData()); // 小球
-      actor.setMapper(glyphMapper);
-      actor.getProperty().setRepresentationToSurface();
-      return { glyphMapper, sphere };
-    }
+        // 更新度量信息
+        function updateMetrics(visit) {
+            document.getElementById('metric-volume').textContent =
+                visit.vol_cc ? `${visit.vol_cc.toFixed(2)} cm³` : '-- cm³';
+            document.getElementById('metric-surface').textContent =
+                visit.surface_area_cm2 ? `${visit.surface_area_cm2.toFixed(2)} cm²` : '-- cm²';
+            document.getElementById('metric-points').textContent =
+                visit.num_points || '--';
+            document.getElementById('metric-date').textContent =
+                visit.date || '--';
+        }
 
-    function createSurfaceMapper(polyData) {
-      const mapper = vtk.Rendering.Core.vtkMapper.newInstance({ scalarVisibility: false });
-      mapper.setInputData(polyData);
-      actor.setMapper(mapper);
-      actor.getProperty().setRepresentationToSurface();
-      return mapper;
-    }
+        // 加载 3D 模型（占位）
+        function load3DModel(plyPath) {
+            const container = document.getElementById('canvas-container');
+            container.innerHTML = `<p>加载模型中: ${plyPath}</p>
+                <p style="margin-top: 1rem; font-size: 0.9rem; opacity: 0.7;">
+                    (3D 可视化需要集成 VTK.js 或 Three.js)
+                </p>`;
+        }
 
-    // ---------------- 状态与渲染 ----------------
-    const cache = new Map();
-    let current = { polyData: null, mode: 'points', glyph: null };
-
-    function diagLength(bounds) {
-      const [xmin,xmax,ymin,ymax,zmin,zmax] = bounds;
-      const dx=xmax-xmin, dy=ymax-ymin, dz=zmax-zmin;
-      return Math.sqrt(dx*dx+dy*dy+dz*dz) || 1;
-    }
-
-    async function setDataset(url, meta={}) {
-      console.log('[DT] loading:', url);
-      let polyData = cache.get(url);
-      if (!polyData) {
-        polyData = await loadPolyData(url);
-        cache.set(url, polyData);
-      }
-      current.polyData = polyData;
-
-      const b = polyData.getBounds();
-      console.log('[DT] bounds:', b);
-
-      // 自动估计默认小球半径（对 Spheres 有用）
-      const estR = Math.max(0.001, diagLength(b) / 200);
-      if (+sphereRInput.value <= 0.1) {
-        sphereRInput.value = estR.toFixed(2);
-        sphereRLabel.textContent = sphereRInput.value;
-      }
-
-      // 应用当前模式
-      applyMode(modeSelect.value);
-
-      // 自适应相机
-      renderer.resetCamera();
-      renderWindow.render();
-
-      // 元信息
-      const info = [];
-      if (meta.days_from_diagnosis != null) info.push(`Day ${meta.days_from_diagnosis}`);
-      if (meta.approx_vol != null)          info.push(`Vol≈${(+meta.approx_vol).toFixed(2)}`);
-      metaSpan.textContent = info.join(' · ');
-    }
-
-    function applyMode(mode) {
-      if (!current.polyData) return;
-      current.mode = mode;
-
-      // UI 显隐
-      ptSizeWrap.classList.toggle('hide', mode !== 'points');
-      sphereRWrap.classList.toggle('hide', mode !== 'spheres');
-
-      // Lighting
-      actor.getProperty().setLighting(!!lightingChk.checked);
-
-      if (mode === 'points') {
-        createPointsMapper(current.polyData, +ptSizeInput.value);
-      } else if (mode === 'spheres') {
-        const { glyphMapper, sphere } = createGlyphMapper(current.polyData, +sphereRInput.value);
-        current.glyph = { glyphMapper, sphere };
-      } else {
-        createSurfaceMapper(current.polyData);
-      }
-      renderWindow.render();
-    }
-
-    // ---------------- 事件绑定 ----------------
-    patientSelect.addEventListener('change', () => usePatient(+patientSelect.value));
-    visitSlider.addEventListener('input', () => {
-      const tl = timelines[+patientSelect.value];
-      const idx = +visitSlider.value;
-      const v = tl.visits[idx];
-      visitLabel.textContent = (idx+1) + ' / ' + tl.visits.length;
-      const path = 'data/' + (v.ply || v.vtp || v.obj || v.stl);
-      setDataset(path, v);
-    });
-    modeSelect.addEventListener('change', () => applyMode(modeSelect.value));
-    ptSizeInput.addEventListener('input', () => {
-      ptSizeLabel.textContent = ptSizeInput.value;
-      if (current.mode === 'points') {
-        actor.getProperty().setPointSize(+ptSizeInput.value);
-        renderWindow.render();
-      }
-    });
-    sphereRInput.addEventListener('input', () => {
-      sphereRLabel.textContent = sphereRInput.value;
-      if (current.mode === 'spheres' && current.glyph?.sphere) {
-        current.glyph.sphere.setRadius(+sphereRInput.value);
-        renderWindow.render();
-      }
-    });
-    lightingChk.addEventListener('change', () => {
-      actor.getProperty().setLighting(!!lightingChk.checked);
-      renderWindow.render();
-    });
-
-    // ---------------- 时间轴装载 ----------------
-    let timelines = [];
-    function bootWithTimeline(tl) {
-      timelines = Array.isArray(tl) ? tl : [tl];
-      patientSelect.innerHTML = '';
-      timelines.forEach((t, i) => {
-        const opt = document.createElement('option');
-        opt.value = i;
-        opt.textContent = t.patient_id || ('patient_' + i);
-        patientSelect.appendChild(opt);
-      });
-      patientSelect.value = 0;
-      usePatient(0);
-    }
-
-    function usePatient(idx) {
-      const tl = timelines[idx];
-      visitSlider.min = 0;
-      visitSlider.max = tl.visits.length - 1;
-      visitSlider.value = 0;
-      visitLabel.textContent = '1 / ' + tl.visits.length;
-      const v0 = tl.visits[0];
-      const path = 'data/' + (v0.ply || v0.vtp || v0.obj || v0.stl);
-      setDataset(path, v0);
-    }
-
-    // ---------------- 启动：优先 timeline.json，缺失则兜底 ----------------
-    fetch('data/timeline.json')
-      .then(r => { if (!r.ok) throw new Error('no timeline'); return r.json(); })
-      .then(bootWithTimeline)
-      .catch(() => {
-        console.warn('[DT] timeline.json not found, using fallback.');
-        bootWithTimeline({
-          patient_id: 'patientA',
-          visits: [
-            { visit: 1, days_from_diagnosis: 0,  ply: 'patientA_visit1.ply', approx_vol: 1.23 },
-            { visit: 2, days_from_diagnosis: 90, ply: 'patientA_visit2.ply', approx_vol: 1.45 }
-          ]
+        // 事件监听
+        document.getElementById('patient-select').addEventListener('change', (e) => {
+            currentPatient = e.target.value;
+            if (currentPatient) {
+                populateVisitSelect(currentPatient);
+            } else {
+                document.getElementById('visit-select').innerHTML =
+                    '<option value="">-- 请先选择患者 --</option>';
+            }
         });
-      });
-  </script>
+
+        document.getElementById('visit-select').addEventListener('change', (e) => {
+            currentVisit = parseInt(e.target.value);
+        });
+
+        document.getElementById('load-btn').addEventListener('click', () => {
+            if (!currentPatient || !currentVisit) {
+                alert('请先选择患者和就诊记录');
+                return;
+            }
+
+            const patient = timelineData.find(p => p.patient_id === currentPatient);
+            const visit = patient.visits.find(v => v.visit === currentVisit);
+
+            if (visit) {
+                updateMetrics(visit);
+                load3DModel(visit.ply);
+            }
+        });
+
+        document.getElementById('reset-btn').addEventListener('click', () => {
+            document.getElementById('canvas-container').innerHTML =
+                '<p>请选择患者和就诊记录以加载 3D 模型</p>';
+        });
+
+        // 初始化
+        loadTimeline();
+    </script>
 </body>
 </html>

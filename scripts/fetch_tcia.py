@@ -152,7 +152,23 @@ def main():
             if len(patients) > 50:
                 print(f"  ... 还有 {len(patients) - 50} 个患者")
         else:
-            print(f"数据集 {args.collection} 中未找到患者")
+            print(f"\n数据集 {args.collection} 中未找到患者")
+            print("\n" + "=" * 60)
+            print("可能的原因:")
+            print("  1. TCIA API 需要认证（某些数据集需要 API Key）")
+            print("  2. 数据集名称不正确")
+            print("  3. API 访问限制或临时不可用")
+            print("\n建议的解决方案:")
+            print("  ① 手动下载:")
+            print("     访问 https://nbia.cancerimagingarchive.net/")
+            print("     搜索并下载 DICOM 数据")
+            print("\n  ② 申请 API Key:")
+            print("     https://wiki.cancerimagingarchive.net/x/X4ATBg")
+            print(f"     然后使用: python scripts/fetch_tcia.py --api-key YOUR_KEY ...")
+            print("\n  ③ 使用本地 DICOM 文件:")
+            print("     查看文档: docs/USE_LOCAL_DICOM.md")
+            print("     将 DICOM 文件放在: raw/tcia/{patient_id}/study_X/series_Y/")
+            print("=" * 60)
         return
 
     # 下载数据

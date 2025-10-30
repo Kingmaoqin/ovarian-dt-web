@@ -17,6 +17,7 @@ import json
 import time
 import logging
 import requests
+import requests.exceptions
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from datetime import datetime
@@ -66,13 +67,50 @@ class TCIAClient:
             患者 ID 列表
         """
         url = f"{self.BASE_URL}/getPatient"
-        params = {"Collection": collection}
+        params = {"Collection": collection, "format": "json"}
+
         try:
             response = self.session.get(url, params=params, timeout=30)
             response.raise_for_status()
-            patients = [item["PatientID"] for item in response.json()]
-            logger.info(f"数据集 {collection} 包含 {len(patients)} 个患者")
-            return patients
+
+            # 尝试解析 JSON
+            try:
+                data = response.json()
+            except ValueError as e:
+                logger.error(f"无法解析 JSON 响应: {e}")
+                logger.debug(f"响应内容: {response.text[:200]}")
+                return []
+
+            # 处理不同的响应格式
+            if isinstance(data, list):
+                # 尝试多种可能的键名
+                possible_keys = ['PatientID', 'patientId', 'Subject ID', 'SubjectID']
+                for key in possible_keys:
+                    try:
+                        patients = [item[key] for item in data if key in item]
+                        if patients:
+                            logger.info(f"数据集 {collection} 包含 {len(patients)} 个患者")
+                            return patients
+                    except (KeyError, TypeError):
+                        continue
+
+                # 如果上述都失败，尝试直接返回列表项
+                if data and isinstance(data[0], str):
+                    logger.info(f"数据集 {collection} 包含 {len(data)} 个患者")
+                    return data
+
+            logger.error(f"无法从响应中提取患者列表，响应格式: {type(data)}")
+            if data:
+                logger.debug(f"响应示例: {str(data)[:200]}")
+            return []
+
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 401:
+                logger.error(f"认证失败: TCIA API 需要有效的 API Key")
+                logger.info(f"请访问 https://wiki.cancerimagingarchive.net/x/X4ATBg 获取 API Key")
+            else:
+                logger.error(f"HTTP 错误 {e.response.status_code}: {e}")
+            return []
         except Exception as e:
             logger.error(f"获取患者列表失败: {e}")
             return []

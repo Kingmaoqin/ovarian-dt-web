@@ -93,7 +93,9 @@ pip install -r requirements.txt
 make setup
 ```
 
-### 2. 下载 TCIA 数据（示例）
+### 2. 准备 DICOM 数据
+
+**选项 A: 下载 TCIA 数据（需要 API 访问权限）**
 
 ```bash
 python scripts/fetch_tcia.py \
@@ -107,6 +109,24 @@ python scripts/fetch_tcia.py \
 ```bash
 python scripts/fetch_tcia.py --list-collections
 ```
+
+**⚠️ 注意**: TCIA API 可能需要认证。如果遇到访问问题，请参考下面的选项 B。
+
+**选项 B: 使用本地 DICOM 文件（推荐用于测试）**
+
+将 DICOM 文件组织到以下结构：
+
+```
+raw/tcia/
+└── PAT123/              # 患者 ID
+    └── study_1/         # 研究编号
+        └── series_1/    # 序列编号
+            ├── 1.dcm
+            ├── 2.dcm
+            └── ...
+```
+
+详细说明请参考: **[使用本地 DICOM 文件指南](docs/USE_LOCAL_DICOM.md)**
 
 ### 3. 准备临床数据
 

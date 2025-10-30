@@ -1,0 +1,91 @@
+# 卵巢癌数字孪生项目配置文件
+
+# TCIA 配置
+tcia:
+  api_key: null  # TCIA API Key（可选，部分数据集需要）
+  base_url: "https://services.cancerimagingarchive.net/nbia-api/services/v1"
+  default_collection: "TCGA-OV"  # 默认数据集
+  max_retries: 3  # 最大重试次数
+
+# 路径配置
+paths:
+  raw_data: "raw"
+  tcia_data: "raw/tcia"
+  clinical_data: "raw/clinical"
+  web_data: "ovarian-dt-web/data"
+  work_dir: "work"
+  models_dir: "work/models"
+  features_dir: "work/feats"
+
+# DICOM 处理配置
+dicom:
+  apply_hu: true  # 是否转换为 HU 值
+  default_spacing: [1.0, 1.0, 1.0]  # 默认体素间距 (Z, Y, X) in mm
+
+# 分割配置
+segmentation:
+  method: "threshold"  # threshold, region_growing, mask
+  threshold:
+    lower: -200  # 下限阈值
+    upper: 300   # 上限阈值
+    min_size: 100  # 最小连通域体积（体素数）
+    fill_holes: true  # 填充空洞
+  region_growing:
+    threshold: 50.0  # 生长阈值
+    connectivity: 1  # 连通性 (1: 6-邻域, 2: 18-邻域, 3: 26-邻域)
+
+# 网格生成配置
+mesh:
+  marching_cubes:
+    level: 0.5  # 等值面阈值
+    smooth: true  # 是否平滑
+    smooth_iterations: 5  # 平滑迭代次数
+  poisson:
+    enabled: false  # 是否使用 Poisson 重建
+    depth: 9  # Poisson 深度
+    density_threshold: 0.01  # 密度阈值
+
+# 点云生成配置
+pointcloud:
+  sample_method: "uniform"  # uniform, poisson_disk, volume
+  num_points: 20000  # 采样点数（从网格）
+  voxel_size: 1.5  # 下采样体素大小 (mm)
+  estimate_normals: true  # 是否估计法向量
+  normal_radius: 2.0  # 法向量估计半径 (mm)
+  normal_max_nn: 30  # 法向量估计最大近邻数
+
+# 数据融合配置
+data_fusion:
+  volume_increase_threshold: 0.2  # 体积增长阈值（20%）
+  merge_tolerance_days: 30  # 化验数据合并容差（天）
+
+# 分类模型配置
+classification:
+  model: "xgb"  # xgb, rf
+  xgb:
+    n_estimators: 100
+    max_depth: 5
+    learning_rate: 0.1
+    subsample: 0.8
+    colsample_bytree: 0.8
+  rf:
+    n_estimators: 100
+    max_depth: 10
+  cv_folds: 5  # 交叉验证折数
+
+# 生存分析配置
+survival:
+  model: "coxph"  # coxph
+  penalizer: 0.01  # L2 正则化参数
+
+# 日志配置
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "pipeline.log"
+
+# 前端配置
+frontend:
+  web_dir: "ovarian-dt-web"
+  snapshot_width: 1920
+  snapshot_height: 1080

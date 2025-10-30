@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <title>Ovarian DT — vtk.js Timeline Viewer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- 用 CDN；若需离线，把这行换成本地 assets/vtk.min.js -->
+  <script src="https://unpkg.com/vtk.js"></script>
+  <style>
+    body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system; }
+    #toolbar { position:fixed; top:0; left:0; right:0; background:#111; color:#eee;
+               padding:8px 12px; display:flex; gap:16px; align-items:center; z-index:10; }
+    #app { position:absolute; top:48px; left:0; right:0; bottom:0; }
+    label { font-size:14px; }
+    select, input[type=range] { vertical-align:middle; }
+    .spacer { flex:1; }
+  </style>
+</head>
+<body>
+  <div id="toolbar">
+    <label>患者:
+      <select id="patientSelect"></select>
+    </label>
+    <label>时间点:
+      <input id="visitSlider" type="range" min="0" max="0" value="0" step="1" />
+      <span id="visitLabel">0</span>
+    </label>
+    <label>点大小:
+      <input id="ptSize" type="range" min="1" max="8" value="3" />
+      <span id="ptSizeLabel">3</span>
+    </label>
+    <div class="spacer"></div>
+    <span id="meta"></span>
+  </div>
+  <div id="app"></div>
+
+  <script>
+    // 初始化渲染窗口（vtkFullScreenRenderWindow）
+    const fsrw = vtk.Rendering.Misc.vtkFullScreenRenderWindow.newInstance({
+      rootContainer: document.body,
+      containerStyle: { height: '100%', width: '100%', position: 'absolute' },
+      background: [0.98, 0.98, 0.98],
+    });
+    const renderer = fsrw.getRenderer();
+    const renderWindow = fsrw.getRenderWindow();
+
+    // 坐标轴
+    const axes = vtk.Rendering.Core.vtkAxesActor.newInstance();
+    renderer.addActor(axes);
+
+    // 一个 actor + mapper，切换不同时间点的数据
+    const actor  = vtk.Rendering.Core.vtkActor.newInstance();
+    const mapper = vtk.Rendering.Core.vtkMapper.newInstance({ scalarVisibility: false });
+    actor.setMapper(mapper);
+    actor.getProperty().setRepresentationToPoints();  // 点云模式
+    actor.getProperty().setPointSize(3);
+    renderer.addActor(actor);
+
+    // UI
+    const patientSelect = document.getElementById('patientSelect');
+    const visitSlider   = document.getElementById('visitSlider');
+    const visitLabel    = document.getElementById('visitLabel');
+    const ptSizeInput   = document.getElementById('ptSize');
+    const ptSizeLabel   = document.getElementById('ptSizeLabel');
+    const metaSpan      = document.getElementById('meta');
+
+    // 根据扩展名选择读取器（PLY/VTP/OBJ/STL）
+    function loadPolyData(url) {
+      const ext = url.split('.').pop().toLowerCase();
+      if (ext === 'ply') {
+        const r = vtk.IO.Misc.vtkPLYReader.newInstance();
+        return r.setUrl(url).then(() => r.getOutputData());
+      } else if (ext === 'vtp') {
+        const r = vtk.IO.XML.vtkXMLPolyDataReader.newInstance();
+        return r.setUrl(url).then(() => r.getOutputData());
+      } else if (ext === 'stl') {
+        const r = vtk.IO.Geometry.vtkSTLReader.newInstance();
+        return r.setUrl(url).then(() => r.getOutputData());
+      } else if (ext === 'obj') {
+        const r = vtk.IO.Geometry.vtkOBJReader.newInstance();
+        return r.setUrl(url).then(() => r.getOutputData());
+      }
+      return Promise.reject(new Error('Unsupported format: ' + ext));
+    }
+
+    const cache = new Map();
+    async function setDataset(url, meta = {}) {
+      let polyData = cache.get(url);
+      if (!polyData) {
+        polyData = await loadPolyData(url);
+        cache.set(url, polyData);
+      }
+      mapper.setInputData(polyData);
+      renderer.resetCamera();
+      renderWindow.render();
+
+      const info = [];
+      if (meta.days_from_diagnosis != null) info.push(`Day ${meta.days_from_diagnosis}`);
+      if (meta.approx_vol != null)          info.push(`Vol≈${(+meta.approx_vol).toFixed(2)}`);
+      metaSpan.textContent = info.join(' · ');
+    }
+
+    function bootWithTimeline(timelines) {
+      // 支持数组/单对象
+      const tls = Array.isArray(timelines) ? timelines : [timelines];
+      // 填充患者下拉
+      patientSelect.innerHTML = '';
+      tls.forEach((t, i) => {
+        const opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = t.patient_id || ('patient_' + i);
+        patientSelect.appendChild(opt);
+      });
+
+      function usePatient(idx) {
+        const tl = tls[idx];
+        visitSlider.min = 0;
+        visitSlider.max = tl.visits.length - 1;
+        visitSlider.value = 0;
+        visitLabel.textContent = '1 / ' + tl.visits.length;
+        const v0 = tl.visits[0];
+        const path = 'data/' + (v0.ply || v0.vtp || v0.obj || v0.stl);
+        setDataset(path, v0);
+      }
+
+      patientSelect.addEventListener('change', () => usePatient(+patientSelect.value));
+      visitSlider.addEventListener('input', () => {
+        const tl = tls[+patientSelect.value];
+        const idx = +visitSlider.value;
+        const v = tl.visits[idx];
+        visitLabel.textContent = (idx+1) + ' / ' + tl.visits.length;
+        const path = 'data/' + (v.ply || v.vtp || v.obj || v.stl);
+        setDataset(path, v);
+      });
+      ptSizeInput.addEventListener('input', () => {
+        const s = +ptSizeInput.value;
+        ptSizeLabel.textContent = s;
+        actor.getProperty().setPointSize(s);
+        renderWindow.render();
+      });
+
+      // 初始化
+      patientSelect.value = 0;
+      ptSizeLabel.textContent = ptSizeInput.value;
+      usePatient(0);
+    }
+
+    // 先尝试加载时间轴；失败则走兜底：直接加载 patientA_visit1/2
+    fetch('data/timeline.json')
+      .then(r => {
+        if (!r.ok) throw new Error('no timeline');
+        return r.json();
+      })
+      .then(tl => bootWithTimeline(tl))
+      .catch(() => {
+        // 兜底：假定存在样例文件
+        bootWithTimeline({
+          patient_id: 'patientA',
+          visits: [
+            { visit: 1, days_from_diagnosis: 0,  ply: 'patientA_visit1.ply' },
+            { visit: 2, days_from_diagnosis: 90, ply: 'patientA_visit2.ply' },
+          ]
+        });
+      });
+  </script>
+</body>
+</html>

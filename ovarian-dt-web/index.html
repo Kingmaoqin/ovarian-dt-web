@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <title>Ovarian DT — vtk.js Timeline Viewer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- 推荐使用本地 vtk.min.js（若无网络，更稳） -->
+  <script src="assets/vtk.min.js"></script>
+  <!-- 如需临时用 CDN，请改为：<script src="https://unpkg.com/vtk.js"></script> -->
+  <style>
+    :root { --bar-h: 48px; }
+    html, body { height:100%; }
+    body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system; color:#f6f4f4; }
+    #toolbar {
+      position:fixed; top:0; left:0; right:0; height:var(--bar-h);
+      background:#111; display:flex; align-items:center; gap:16px;
+      padding:6px 12px; z-index:10;
+    }
+    #app { position:absolute; top:var(--bar-h); left:0; right:0; bottom:0; }
+    label { font-size:14px; white-space:nowrap; }
+    select, input[type=range], input[type=checkbox] { vertical-align:middle; }
+    .spacer { flex:1; }
+    .muted { opacity:0.75; }
+    .hide { display:none; }
+  </style>
+</head>
+<body>
+  <div id="toolbar">
+    <label>Patient:
+      <select id="patientSelect"></select>
+    </label>
+
+    <label>Timepoint:
+      <input id="visitSlider" type="range" min="0" max="0" value="0" step="1" />
+      <span id="visitLabel">0</span>
+    </label>
+
+    <label>Rendering:
+      <select id="modeSelect">
+        <option value="points">Points</option>
+        <option value="spheres">Spheres</option>
+        <option value="surface">Surface</option>
+      </select>
+    </label>
+
+    <label id="ptSizeWrap">Point size:
+      <input id="ptSize" type="range" min="1" max="12" value="5" />
+      <span id="ptSizeLabel">5</span>
+    </label>
+
+    <label id="sphereRWrap" class="hide">Sphere radius:
+      <input id="sphereR" type="range" min="0.1" max="10" step="0.1" value="1.0" />
+      <span id="sphereRLabel">1.0</span>
+    </label>
+
+    <label class="muted">Lighting
+      <input id="lighting" type="checkbox" checked />
+    </label>
+
+    <div class="spacer"></div>
+    <span id="meta" class="muted"></span>
+  </div>
+
+  <div id="app"></div>
+
+  <script>
+    // ---------------- 基本渲染管线 ----------------
+    const fsrw = vtk.Rendering.Misc.vtkFullScreenRenderWindow.newInstance({
+      rootContainer: document.body,
+      containerStyle: { height: '100%', width: '100%', position: 'absolute' },
+      background: [0.98, 0.98, 0.98],
+    });
+    const renderer = fsrw.getRenderer();
+    const renderWindow = fsrw.getRenderWindow();
+    const interactor = renderWindow.getInteractor();
+
+    // 坐标轴
+    const axes = vtk.Rendering.Core.vtkAxesActor.newInstance();
+    renderer.addActor(axes);
+
+    // 单一 actor，mapper 可按模式更换
+    const actor  = vtk.Rendering.Core.vtkActor.newInstance();
+    renderer.addActor(actor);
+
+    // ---------------- UI 句柄 ----------------
+    const patientSelect = document.getElementById('patientSelect');
+    const visitSlider   = document.getElementById('visitSlider');
+    const visitLabel    = document.getElementById('visitLabel');
+    const modeSelect    = document.getElementById('modeSelect');
+    const ptSizeInput   = document.getElementById('ptSize');
+    const ptSizeLabel   = document.getElementById('ptSizeLabel');
+    const sphereRInput  = document.getElementById('sphereR');
+    const sphereRLabel  = document.getElementById('sphereRLabel');
+    const ptSizeWrap    = document.getElementById('ptSizeWrap');
+    const sphereRWrap   = document.getElementById('sphereRWrap');
+    const lightingChk   = document.getElementById('lighting');
+    const metaSpan      = document.getElementById('meta');
+
+    // ---------------- 数据加载 ----------------
+    function loadPolyData(url) {
+      const ext = url.split('.').pop().toLowerCase();
+      if (ext === 'ply') {
+        const r = vtk.IO.Geometry.vtkPLYReader.newInstance();
+        return r.setUrl(url).then(() => r.getOutputData());
+      } else if (ext === 'vtp') {
+        const r = vtk.IO.XML.vtkXMLPolyDataReader.newInstance();
+        return r.setUrl(url).then(() => r.getOutputData());
+      } else if (ext === 'stl') {
+        const r = vtk.IO.Geometry.vtkSTLReader.newInstance();
+        return r.setUrl(url).then(() => r.getOutputData());
+      } else if (ext === 'obj') {
+        const r = vtk.IO.Geometry.vtkOBJReader.newInstance();
+        return r.setUrl(url).then(() => r.getOutputData());
+      }
+      return Promise.reject(new Error('Unsupported format: ' + ext));
+    }
+
+    // ---------------- Mapper 工厂 ----------------
+    function createPointsMapper(polyData, pointSize=5) {
+      const mapper = vtk.Rendering.Core.vtkMapper.newInstance({ scalarVisibility: false });
+      mapper.setInputData(polyData);
+      actor.setMapper(mapper);
+      actor.getProperty().setRepresentationToPoints();
+      actor.getProperty().setPointSize(pointSize);
+      return mapper;
+    }
+
+    function createGlyphMapper(polyData, radius=1.0) {
+      // 有些打包方式需要启用 Glyph profile；全量 UMD 通常已包含
+      try { vtk.Rendering.Profile.Glyph; } catch (_) {}
+      const sphere = vtk.Filters.Sources.vtkSphereSource.newInstance({
+        radius, phiResolution: 10, thetaResolution: 10,
+      });
+      const glyphMapper = vtk.Rendering.Core.vtkGlyph3DMapper.newInstance();
+      glyphMapper.setInputData(polyData);                 // 输入点
+      glyphMapper.setGlyphSource(sphere.getOutputData()); // 小球
+      actor.setMapper(glyphMapper);
+      actor.getProperty().setRepresentationToSurface();
+      return { glyphMapper, sphere };
+    }
+
+    function createSurfaceMapper(polyData) {
+      const mapper = vtk.Rendering.Core.vtkMapper.newInstance({ scalarVisibility: false });
+      mapper.setInputData(polyData);
+      actor.setMapper(mapper);
+      actor.getProperty().setRepresentationToSurface();
+      return mapper;
+    }
+
+    // ---------------- 状态与渲染 ----------------
+    const cache = new Map();
+    let current = { polyData: null, mode: 'points', glyph: null };
+
+    function diagLength(bounds) {
+      const [xmin,xmax,ymin,ymax,zmin,zmax] = bounds;
+      const dx=xmax-xmin, dy=ymax-ymin, dz=zmax-zmin;
+      return Math.sqrt(dx*dx+dy*dy+dz*dz) || 1;
+    }
+
+    async function setDataset(url, meta={}) {
+      console.log('[DT] loading:', url);
+      let polyData = cache.get(url);
+      if (!polyData) {
+        polyData = await loadPolyData(url);
+        cache.set(url, polyData);
+      }
+      current.polyData = polyData;
+
+      const b = polyData.getBounds();
+      console.log('[DT] bounds:', b);
+
+      // 自动估计默认小球半径（对 Spheres 有用）
+      const estR = Math.max(0.001, diagLength(b) / 200);
+      if (+sphereRInput.value <= 0.1) {
+        sphereRInput.value = estR.toFixed(2);
+        sphereRLabel.textContent = sphereRInput.value;
+      }
+
+      // 应用当前模式
+      applyMode(modeSelect.value);
+
+      // 自适应相机
+      renderer.resetCamera();
+      renderWindow.render();
+
+      // 元信息
+      const info = [];
+      if (meta.days_from_diagnosis != null) info.push(`Day ${meta.days_from_diagnosis}`);
+      if (meta.approx_vol != null)          info.push(`Vol≈${(+meta.approx_vol).toFixed(2)}`);
+      metaSpan.textContent = info.join(' · ');
+    }
+
+    function applyMode(mode) {
+      if (!current.polyData) return;
+      current.mode = mode;
+
+      // UI 显隐
+      ptSizeWrap.classList.toggle('hide', mode !== 'points');
+      sphereRWrap.classList.toggle('hide', mode !== 'spheres');
+
+      // Lighting
+      actor.getProperty().setLighting(!!lightingChk.checked);
+
+      if (mode === 'points') {
+        createPointsMapper(current.polyData, +ptSizeInput.value);
+      } else if (mode === 'spheres') {
+        const { glyphMapper, sphere } = createGlyphMapper(current.polyData, +sphereRInput.value);
+        current.glyph = { glyphMapper, sphere };
+      } else {
+        createSurfaceMapper(current.polyData);
+      }
+      renderWindow.render();
+    }
+
+    // ---------------- 事件绑定 ----------------
+    patientSelect.addEventListener('change', () => usePatient(+patientSelect.value));
+    visitSlider.addEventListener('input', () => {
+      const tl = timelines[+patientSelect.value];
+      const idx = +visitSlider.value;
+      const v = tl.visits[idx];
+      visitLabel.textContent = (idx+1) + ' / ' + tl.visits.length;
+      const path = 'data/' + (v.ply || v.vtp || v.obj || v.stl);
+      setDataset(path, v);
+    });
+    modeSelect.addEventListener('change', () => applyMode(modeSelect.value));
+    ptSizeInput.addEventListener('input', () => {
+      ptSizeLabel.textContent = ptSizeInput.value;
+      if (current.mode === 'points') {
+        actor.getProperty().setPointSize(+ptSizeInput.value);
+        renderWindow.render();
+      }
+    });
+    sphereRInput.addEventListener('input', () => {
+      sphereRLabel.textContent = sphereRInput.value;
+      if (current.mode === 'spheres' && current.glyph?.sphere) {
+        current.glyph.sphere.setRadius(+sphereRInput.value);
+        renderWindow.render();
+      }
+    });
+    lightingChk.addEventListener('change', () => {
+      actor.getProperty().setLighting(!!lightingChk.checked);
+      renderWindow.render();
+    });
+
+    // ---------------- 时间轴装载 ----------------
+    let timelines = [];
+    function bootWithTimeline(tl) {
+      timelines = Array.isArray(tl) ? tl : [tl];
+      patientSelect.innerHTML = '';
+      timelines.forEach((t, i) => {
+        const opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = t.patient_id || ('patient_' + i);
+        patientSelect.appendChild(opt);
+      });
+      patientSelect.value = 0;
+      usePatient(0);
+    }
+
+    function usePatient(idx) {
+      const tl = timelines[idx];
+      visitSlider.min = 0;
+      visitSlider.max = tl.visits.length - 1;
+      visitSlider.value = 0;
+      visitLabel.textContent = '1 / ' + tl.visits.length;
+      const v0 = tl.visits[0];
+      const path = 'data/' + (v0.ply || v0.vtp || v0.obj || v0.stl);
+      setDataset(path, v0);
+    }
+
+    // ---------------- 启动：优先 timeline.json，缺失则兜底 ----------------
+    fetch('data/timeline.json')
+      .then(r => { if (!r.ok) throw new Error('no timeline'); return r.json(); })
+      .then(bootWithTimeline)
+      .catch(() => {
+        console.warn('[DT] timeline.json not found, using fallback.');
+        bootWithTimeline({
+          patient_id: 'patientA',
+          visits: [
+            { visit: 1, days_from_diagnosis: 0,  ply: 'patientA_visit1.ply', approx_vol: 1.23 },
+            { visit: 2, days_from_diagnosis: 90, ply: 'patientA_visit2.ply', approx_vol: 1.45 }
+          ]
+        });
+      });
+  </script>
+</body>
+</html>

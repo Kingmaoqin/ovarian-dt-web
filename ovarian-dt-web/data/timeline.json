@@ -1,0 +1,7 @@
+{
+  "patient_id": "patientA",
+  "visits": [
+    { "visit": 1, "days_from_diagnosis": 0,  "ply": "patientA_visit1.ply", "approx_vol": 1.23 },
+    { "visit": 2, "days_from_diagnosis": 90, "ply": "patientA_visit2.ply", "approx_vol": 1.45 }
+  ]
+}

@@ -1,0 +1,27 @@
+name: ov-dt
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - numpy
+  - pandas
+  - tqdm
+  - requests
+  - pydantic
+  - pydicom
+  - nibabel
+  - simpleitk
+  - scikit-image
+  - monai
+  - open3d
+  - pyvista
+  - trimesh
+  - scikit-learn
+  - lifelines
+  - matplotlib
+  - dcm2niix
+  - xorg-libx11
+  - xorg-libxrender
+  - xorg-libxext
+  - xorg-libxt

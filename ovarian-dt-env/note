@@ -1,0 +1,10 @@
+conda activate ov-dt                                                                                                                       
+export EGL_PLATFORM=surfaceless #set running without display surfacepy
+
+Web visual (not work right now)：
+export WEBRTC_IP=0.0.0.0
+export WEBRTC_PORT=8888
+
+Instead:
+cd ~/ovarian-dt-web
+python -m http.server 8010
